@@ -1,9 +1,9 @@
 {
     "display_width": 360,
     "display_height": 1280,
-    "min_objects": 1,
-    "max_objects": 10,
-    "min_scale": 0.2,
+    "min_objects": 2,
+    "max_objects": 6,
+    "min_scale": 0.5,
     "max_scale": 1.0,
     "folder_path": "C:/Users/hades/Downloads/Videos"
 }
