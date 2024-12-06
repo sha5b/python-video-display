@@ -6,6 +6,7 @@ from typing import List
 from components.text_overlay import TextOverlay
 from components.container_transform import ContainerTransform
 from components.ui_manager import UIManager
+from components.background_elements import BackgroundElements
 
 class VideoPlayer:
     def __init__(self):
@@ -40,6 +41,7 @@ class VideoPlayer:
             min_scale=settings['min_scale'],
             max_scale=settings['max_scale']
         )
+        self.background_elements = BackgroundElements()
         
         # Initialize video handling
         self.videos = self.load_videos()
@@ -121,6 +123,9 @@ class VideoPlayer:
                         continue
                 
                 display.fill(0)
+                
+                # Render background elements first
+                self.background_elements.render(display)
                 
                 # Process containers
                 for container in self.objects:
