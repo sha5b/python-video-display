@@ -50,6 +50,30 @@ class VideoPlayer:
         while len(containers) < count and attempt_count < max_attempts:
             attempt_count += 1
             
+            # Force simpler placement for first container if we're struggling
+            if len(containers) == 0 and attempt_count > 25:
+                # Simplified settings for guaranteed placement
+                container = {
+                    'width_scale': 0.3,  # Small, conservative size
+                    'height_scale': 0.3,
+                    'position': (0, 0),  # Top-left corner
+                    'cutout_size': 0.5,  # Middle value
+                    'cutout_x': 0.5,
+                    'cutout_y': 0.5,
+                    'is_vertical': False,
+                    'rotation': 0
+                }
+                containers.append(container)
+                # Mark position as occupied
+                grid_x = 0
+                grid_y = 0
+                grid_w = max(1, int(0.3 * grid_size))
+                grid_h = max(1, int(0.3 * grid_size))
+                for gx in range(grid_w):
+                    for gy in range(grid_h):
+                        occupied_grid[gy, gx] = True
+                continue
+            
             # Randomly choose between vertical and horizontal orientation
             is_vertical = random.random() > 0.5
             
@@ -141,67 +165,73 @@ class VideoPlayer:
         target_width = int(self.display_width * container['width_scale'])
         target_height = int(self.display_height * container['height_scale'])
         
-        # Apply rotation using the stored rotation value
-        if container['rotation'] != 0:
-            frame = cv2.rotate(frame, {
-                90: cv2.ROTATE_90_CLOCKWISE,
-                180: cv2.ROTATE_180,
-                270: cv2.ROTATE_90_COUNTERCLOCKWISE
-            }[container['rotation']])
+        # Ensure minimum dimensions
+        target_width = max(1, target_width)
+        target_height = max(1, target_height)
         
-        # Apply fixed cutout with orientation consideration
-        crop_size = int(min(width, height) * container['cutout_size'])
-        if container['is_vertical']:
-            crop_width = crop_size
-            crop_height = int(crop_size * 1.5)  # Make vertical crops taller
-        else:
-            crop_width = int(crop_size * 1.5)  # Make horizontal crops wider
-            crop_height = crop_size
-        
-        # Ensure crop dimensions don't exceed frame
-        crop_width = min(crop_width, width)
-        crop_height = min(crop_height, height)
-        
-        # Calculate crop position
-        start_x = int((width - crop_width) * container['cutout_x'])
-        start_y = int((height - crop_height) * container['cutout_y'])
-        
-        # Apply crop
-        frame = frame[start_y:start_y+crop_height, start_x:start_x+crop_width]
-        
-        # Calculate scaling factors for both dimensions
-        scale_x = target_width / frame.shape[1]
-        scale_y = target_height / frame.shape[0]
-        
-        # Use the larger scaling factor to ensure the frame fills the container
-        scale = max(scale_x, scale_y)
-        
-        # Calculate new dimensions
-        new_width = int(frame.shape[1] * scale)
-        new_height = int(frame.shape[0] * scale)
-        
-        # Resize frame
-        frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
-        
-        # Center crop to target size
-        start_x = (new_width - target_width) // 2
-        start_y = (new_height - target_height) // 2
-        
-        # Add bounds checking to prevent array broadcast errors
-        end_x = min(start_x + target_width, new_width)
-        end_y = min(start_y + target_height, new_height)
-        
-        # Create a black frame of the target size
-        output_frame = np.zeros((target_height, target_width, 3), dtype=np.uint8)
-        
-        # Calculate the valid region to copy
-        valid_height = min(end_y - start_y, target_height)
-        valid_width = min(end_x - start_x, target_width)
-        
-        # Copy the valid region
-        output_frame[:valid_height, :valid_width] = frame[start_y:start_y+valid_height, start_x:start_x+valid_width]
-        
-        return output_frame, (target_width, target_height)
+        try:
+            # Apply rotation first if needed (using ROTATE_BOUND for better quality)
+            if container['rotation'] != 0:
+                frame = cv2.rotate(frame, {
+                    90: cv2.ROTATE_90_CLOCKWISE,
+                    180: cv2.ROTATE_180,
+                    270: cv2.ROTATE_90_COUNTERCLOCKWISE
+                }[container['rotation']])
+            
+            # Calculate aspect ratios
+            frame_aspect = frame.shape[1] / frame.shape[0]
+            target_aspect = target_width / target_height
+            
+            # Calculate dimensions to fill container while maintaining aspect ratio
+            if frame_aspect > target_aspect:
+                # Frame is wider than container
+                new_height = target_height
+                new_width = int(target_height * frame_aspect)
+            else:
+                # Frame is taller than container
+                new_width = target_width
+                new_height = int(target_width / frame_aspect)
+            
+            # Only resize once, using AREA interpolation for downscaling and LINEAR for upscaling
+            if new_width < width or new_height < height:
+                interpolation = cv2.INTER_AREA  # Better quality for downscaling
+            else:
+                interpolation = cv2.INTER_LINEAR  # Faster for upscaling
+            
+            frame = cv2.resize(frame, (new_width, new_height), interpolation=interpolation)
+            
+            # Calculate crop to center the frame
+            start_x = (new_width - target_width) // 2
+            start_y = (new_height - target_height) // 2
+            
+            # Crop to target size
+            frame = frame[start_y:start_y+target_height, start_x:start_x+target_width]
+            
+            # Apply cutout if specified (simplified for performance)
+            if container.get('cutout_size', 0) > 0:
+                crop_width = int(target_width * container['cutout_size'])
+                crop_height = int(target_height * container['cutout_size'])
+                
+                # Calculate crop position
+                start_x = int((target_width - crop_width) * container['cutout_x'])
+                start_y = int((target_height - crop_height) * container['cutout_y'])
+                
+                # Ensure bounds
+                start_x = min(max(0, start_x), target_width - crop_width)
+                start_y = min(max(0, start_y), target_height - crop_height)
+                
+                # Single resize operation after crop
+                frame = cv2.resize(
+                    frame[start_y:start_y+crop_height, start_x:start_x+crop_width],
+                    (target_width, target_height),
+                    interpolation=cv2.INTER_LINEAR
+                )
+            
+            return frame, (target_width, target_height)
+            
+        except Exception as e:
+            print(f"Error in container transform: {str(e)}")
+            return np.zeros((target_height, target_width, 3), dtype=np.uint8), (target_width, target_height)
 
     def run(self):
         """Main video playback loop"""
@@ -210,8 +240,12 @@ class VideoPlayer:
                 print("No videos found in the specified folder")
                 return
             
+            # Pre-allocate display buffer
             display = np.zeros((self.display_height, self.display_width, 3), dtype=np.uint8)
             cv2.namedWindow('Video Display', cv2.WINDOW_NORMAL)
+            
+            # Buffer for frame reading
+            ret, frame = True, None
             
             while True:
                 if self.cap is None or not self.cap.isOpened():
@@ -232,12 +266,12 @@ class VideoPlayer:
                         
                         self.objects = self.generate_container_settings()
                         
-                        # Get the FPS of the video with error checking
+                        # Set video capture buffer size
+                        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        
+                        # Get optimal frame delay
                         fps = self.cap.get(cv2.CAP_PROP_FPS)
-                        if fps <= 0:
-                            print(f"Warning: Invalid FPS ({fps}), defaulting to 30")
-                            fps = 30
-                        frame_delay = max(1, int(1000 / fps))  # Ensure minimum 1ms delay
+                        frame_delay = max(1, int(1000 / (fps if fps > 0 else 30)))
                         
                     except Exception as e:
                         print(f"Error loading video: {str(e)}")
@@ -246,73 +280,37 @@ class VideoPlayer:
                         self.cap = None
                         continue
                 
-                # Clear display
+                # Clear display using numpy operation
                 display.fill(0)
                 
                 # Read frame
-                try:
+                if frame is None:
                     ret, frame = self.cap.read()
-                    if not ret or frame is None:
-                        print(f"End of video or error reading frame: {self.current_video}")
-                        self.cap.release()
-                        self.cap = None
-                        continue
-                    
-                    # Draw each container
-                    for i, container in enumerate(self.objects):
-                        try:
-                            container_frame, (w, h) = self.apply_container_transform(frame.copy(), container)
-                            x, y = container['position']
-                            
-                            # Add text above container with rotation
-                            text = f"Vid: {self.current_video[:20]} | Pos: ({x},{y}) | Scale: {container['width_scale']:.2f}x{container['height_scale']:.2f}"
-                            
-                            # Adjust text position and rotation based on container rotation
-                            if container.get('rotation', 0) == 0:
-                                # Text above, aligned with container left edge
-                                text_y = max(y - 15, 0)
-                                cv2.putText(display, text, (x, text_y), 
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-                            elif container.get('rotation', 0) == 90:
-                                # Text on the left side, starting at container top edge
-                                text_x = max(x - 15, 0)
-                                cv2.putText(display, text, (text_x, y), 
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1,
-                                          cv2.LINE_AA, True)
-                            elif container.get('rotation', 0) == 180:
-                                # Text below, aligned with container right edge
-                                text_y = min(y + h + 15, self.display_height)
-                                # Get text size to align right edge
-                                (text_width, _), _ = cv2.getTextSize(text[::-1], cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-                                cv2.putText(display, text[::-1], (x + w - text_width, text_y), 
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1,
-                                          cv2.LINE_AA, True)
-                            else:  # 270 degrees
-                                # Text on the right side, starting at container bottom edge
-                                text_x = min(x + w + 15, self.display_width)
-                                cv2.putText(display, text[::-1], (text_x, y + h), 
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1,
-                                          cv2.LINE_AA, True)
-                            
-                            # Draw container frame
-                            display[y:y+h, x:x+w] = container_frame
-                            
-                        except Exception as e:
-                            print(f"Error processing container: {str(e)}")
-                            continue
-                    
-                    cv2.imshow('Video Display', display)
-                    
-                except Exception as e:
-                    print(f"Error in main loop: {str(e)}")
-                    if self.cap is not None:
-                        self.cap.release()
+                
+                if not ret or frame is None:
+                    print(f"End of video or error reading frame: {self.current_video}")
+                    self.cap.release()
                     self.cap = None
                     continue
                 
+                # Process containers
+                for container in self.objects:
+                    try:
+                        container_frame, (w, h) = self.apply_container_transform(frame.copy(), container)
+                        x, y = container['position']
+                        display[y:y+h, x:x+w] = container_frame
+                    except Exception as e:
+                        print(f"Error processing container: {str(e)}")
+                        continue
+                
+                cv2.imshow('Video Display', display)
+                
+                # Read next frame while displaying current one
+                ret, frame = self.cap.read()
+                
                 if cv2.waitKey(frame_delay) & 0xFF == ord('q'):
                     break
-                
+            
             if self.cap is not None:
                 self.cap.release()
             cv2.destroyAllWindows()
