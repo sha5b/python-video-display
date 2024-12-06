@@ -40,12 +40,16 @@ class VideoPlayer:
         """Generate new fixed container settings when video changes"""
         count = random.randint(self.min_objects, self.max_objects)
         containers = []
+        max_attempts = 50  # Maximum attempts to place all containers
         
         # Create a grid to track occupied spaces
         grid_size = 20  # Grid divisions for overlap checking
         occupied_grid = np.zeros((grid_size, grid_size), dtype=bool)
         
-        for _ in range(count):
+        attempt_count = 0
+        while len(containers) < count and attempt_count < max_attempts:
+            attempt_count += 1
+            
             # Randomly choose between vertical and horizontal orientation
             is_vertical = random.random() > 0.5
             
@@ -68,17 +72,20 @@ class VideoPlayer:
             target_width = int(self.display_width * width)
             target_height = int(self.display_height * height)
             
+            if target_width == 0 or target_height == 0:
+                continue  # Skip if dimensions are invalid
+            
             # Try to find a position with no overlap
             best_position = None
-            for _ in range(100):  # Increase attempts to find a non-overlapping position
+            for _ in range(100):  # Attempts for this specific container
                 x = random.randint(0, max(0, self.display_width - target_width))
                 y = random.randint(0, max(0, self.display_height - target_height))
                 
                 # Convert position to grid coordinates
                 grid_x = int(x * grid_size / self.display_width)
                 grid_y = int(y * grid_size / self.display_height)
-                grid_w = int(target_width * grid_size / self.display_width)
-                grid_h = int(target_height * grid_size / self.display_height)
+                grid_w = max(1, int(target_width * grid_size / self.display_width))
+                grid_h = max(1, int(target_height * grid_size / self.display_height))
                 
                 # Check for overlap in grid
                 overlap = False
@@ -95,14 +102,14 @@ class VideoPlayer:
                     break
             
             if best_position is None:
-                print("Warning: Could not find non-overlapping position for container")
+                print(f"Warning: Could not place container after {attempt_count} attempts")
                 continue
             
             # Update occupied grid with chosen position
             grid_x = int(best_position[0] * grid_size / self.display_width)
             grid_y = int(best_position[1] * grid_size / self.display_height)
-            grid_w = int(target_width * grid_size / self.display_width)
-            grid_h = int(target_height * grid_size / self.display_height)
+            grid_w = max(1, int(target_width * grid_size / self.display_width))
+            grid_h = max(1, int(target_height * grid_size / self.display_height))
             
             for gx in range(max(0, grid_x), min(grid_size, grid_x + grid_w)):
                 for gy in range(max(0, grid_y), min(grid_size, grid_y + grid_h)):
@@ -116,9 +123,13 @@ class VideoPlayer:
                 'cutout_size': random.uniform(self.cutout_min_size, self.cutout_max_size),
                 'cutout_x': random.random(),
                 'cutout_y': random.random(),
-                'is_vertical': is_vertical
+                'is_vertical': is_vertical,
+                'rotation': random.choice([0, 90, 180, 270])
             }
             containers.append(container)
+        
+        if len(containers) < count:
+            print(f"Warning: Could only place {len(containers)} containers out of {count} requested")
         
         return containers
 
@@ -129,6 +140,14 @@ class VideoPlayer:
         # Use fixed dimensions
         target_width = int(self.display_width * container['width_scale'])
         target_height = int(self.display_height * container['height_scale'])
+        
+        # Apply rotation using the stored rotation value
+        if container['rotation'] != 0:
+            frame = cv2.rotate(frame, {
+                90: cv2.ROTATE_90_CLOCKWISE,
+                180: cv2.ROTATE_180,
+                270: cv2.ROTATE_90_COUNTERCLOCKWISE
+            }[container['rotation']])
         
         # Apply fixed cutout with orientation consideration
         crop_size = int(min(width, height) * container['cutout_size'])
@@ -176,21 +195,11 @@ class VideoPlayer:
         output_frame = np.zeros((target_height, target_width, 3), dtype=np.uint8)
         
         # Calculate the valid region to copy
-        valid_height = min(frame.shape[0], target_height)
-        valid_width = min(frame.shape[1], target_width)
+        valid_height = min(end_y - start_y, target_height)
+        valid_width = min(end_x - start_x, target_width)
         
-        # Create a centered slice of the output frame
-        y_offset = (target_height - valid_height) // 2
-        x_offset = (target_width - valid_width) // 2
-        
-        # Copy the valid region to the center of the output frame
-        output_frame[
-            y_offset:y_offset+valid_height,
-            x_offset:x_offset+valid_width
-        ] = frame[
-            :valid_height,
-            :valid_width
-        ]
+        # Copy the valid region
+        output_frame[:valid_height, :valid_width] = frame[start_y:start_y+valid_height, start_x:start_x+valid_width]
         
         return output_frame, (target_width, target_height)
 
@@ -223,9 +232,13 @@ class VideoPlayer:
                         
                         self.objects = self.generate_container_settings()
                         
-                        # Get the FPS of the video
+                        # Get the FPS of the video with error checking
                         fps = self.cap.get(cv2.CAP_PROP_FPS)
-                        frame_delay = int(1000 / fps)  # Calculate delay in milliseconds
+                        if fps <= 0:
+                            print(f"Warning: Invalid FPS ({fps}), defaulting to 30")
+                            fps = 30
+                        frame_delay = max(1, int(1000 / fps))  # Ensure minimum 1ms delay
+                        
                     except Exception as e:
                         print(f"Error loading video: {str(e)}")
                         if self.cap is not None:
@@ -251,14 +264,39 @@ class VideoPlayer:
                             container_frame, (w, h) = self.apply_container_transform(frame.copy(), container)
                             x, y = container['position']
                             
-                            # Add text above container
-                            text_y = max(y - 15, 0)  # Position text 15 pixels above container
+                            # Add text above container with rotation
                             text = f"Vid: {self.current_video[:20]} | Pos: ({x},{y}) | Scale: {container['width_scale']:.2f}x{container['height_scale']:.2f}"
-                            cv2.putText(display, text, (x, text_y), 
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                            
+                            # Adjust text position and rotation based on container rotation
+                            if container.get('rotation', 0) == 0:
+                                # Text above, aligned with container left edge
+                                text_y = max(y - 15, 0)
+                                cv2.putText(display, text, (x, text_y), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                            elif container.get('rotation', 0) == 90:
+                                # Text on the left side, starting at container top edge
+                                text_x = max(x - 15, 0)
+                                cv2.putText(display, text, (text_x, y), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1,
+                                          cv2.LINE_AA, True)
+                            elif container.get('rotation', 0) == 180:
+                                # Text below, aligned with container right edge
+                                text_y = min(y + h + 15, self.display_height)
+                                # Get text size to align right edge
+                                (text_width, _), _ = cv2.getTextSize(text[::-1], cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
+                                cv2.putText(display, text[::-1], (x + w - text_width, text_y), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1,
+                                          cv2.LINE_AA, True)
+                            else:  # 270 degrees
+                                # Text on the right side, starting at container bottom edge
+                                text_x = min(x + w + 15, self.display_width)
+                                cv2.putText(display, text[::-1], (text_x, y + h), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1,
+                                          cv2.LINE_AA, True)
                             
                             # Draw container frame
                             display[y:y+h, x:x+w] = container_frame
+                            
                         except Exception as e:
                             print(f"Error processing container: {str(e)}")
                             continue
