@@ -190,13 +190,9 @@ class UIManager:
     def cleanup(self) -> None:
         """Cleanup UI resources"""
         cv2.destroyAllWindows()
-        if self.root:
-            self.root.destroy() 
+        if self.root and self.root.winfo_exists():  # Check if root window still exists
+            self.root.destroy()
     
     def toggle_fullscreen(self):
-        """Toggle fullscreen mode for the video window"""
         self.fullscreen = not self.fullscreen
-        if self.fullscreen:
-            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        else:
-            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL) 
+        self.root.attributes("-fullscreen", self.fullscreen) 
