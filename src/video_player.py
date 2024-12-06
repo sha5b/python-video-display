@@ -41,31 +41,81 @@ class VideoPlayer:
         count = random.randint(self.min_objects, self.max_objects)
         containers = []
         
+        # Create a grid to track occupied spaces
+        grid_size = 20  # Grid divisions for overlap checking
+        occupied_grid = np.zeros((grid_size, grid_size), dtype=bool)
+        
         for _ in range(count):
-            # Generate fixed settings for this container - these won't change until next video
-            aspect_ratio = random.uniform(self.min_aspect_ratio, self.max_aspect_ratio)
+            # Randomly choose between vertical and horizontal orientation
+            is_vertical = random.random() > 0.5
+            
+            if is_vertical:
+                aspect_ratio = random.uniform(1.5, 2.5)  # Taller than wide
+            else:
+                aspect_ratio = random.uniform(0.4, 0.8)  # Wider than tall
+            
             base_size = random.uniform(self.min_scale, self.max_scale)
             
-            # Calculate fixed width and height based on aspect ratio
-            if random.random() > 0.5:
+            # Calculate dimensions based on orientation
+            if is_vertical:
                 width = base_size
-                height = base_size / aspect_ratio
+                height = base_size * aspect_ratio
             else:
                 height = base_size
                 width = base_size * aspect_ratio
             
-            # Create container with ALL fixed settings including cutout position
+            # Calculate actual pixel dimensions
+            target_width = int(self.display_width * width)
+            target_height = int(self.display_height * height)
+            
+            # Try to find a position with minimal overlap
+            best_position = None
+            min_overlap = float('inf')
+            
+            # Try several random positions and pick the one with least overlap
+            for _ in range(10):  # Number of attempts to find good position
+                x = random.randint(0, max(0, self.display_width - target_width))
+                y = random.randint(0, max(0, self.display_height - target_height))
+                
+                # Convert position to grid coordinates
+                grid_x = int(x * grid_size / self.display_width)
+                grid_y = int(y * grid_size / self.display_height)
+                grid_w = int(target_width * grid_size / self.display_width)
+                grid_h = int(target_height * grid_size / self.display_height)
+                
+                # Calculate overlap in grid
+                overlap = 0
+                for gx in range(max(0, grid_x), min(grid_size, grid_x + grid_w)):
+                    for gy in range(max(0, grid_y), min(grid_size, grid_y + grid_h)):
+                        if occupied_grid[gy, gx]:
+                            overlap += 1
+                
+                if overlap < min_overlap:
+                    min_overlap = overlap
+                    best_position = (x, y)
+            
+            # Update occupied grid with chosen position
+            grid_x = int(best_position[0] * grid_size / self.display_width)
+            grid_y = int(best_position[1] * grid_size / self.display_height)
+            grid_w = int(target_width * grid_size / self.display_width)
+            grid_h = int(target_height * grid_size / self.display_height)
+            
+            for gx in range(max(0, grid_x), min(grid_size, grid_x + grid_w)):
+                for gy in range(max(0, grid_y), min(grid_size, grid_y + grid_h)):
+                    occupied_grid[gy, gx] = True
+            
+            # Create container with varied orientation and better positioning
             container = {
                 'width_scale': width,
                 'height_scale': height,
-                'position': (random.randint(0, self.display_width),
-                           random.randint(0, self.display_height)),
+                'position': best_position,
                 'cutout_size': random.uniform(self.cutout_min_size, self.cutout_max_size),
-                # Add fixed cutout positions
-                'cutout_x': random.random(),  # Store as percentage
-                'cutout_y': random.random()   # Store as percentage
+                'cutout_x': random.random(),
+                'cutout_y': random.random(),
+                'is_vertical': is_vertical
             }
             containers.append(container)
+        
         return containers
 
     def apply_container_transform(self, frame: np.ndarray, container: dict) -> Tuple[np.ndarray, Tuple[int, int]]:
@@ -76,44 +126,47 @@ class VideoPlayer:
         target_width = int(self.display_width * container['width_scale'])
         target_height = int(self.display_height * container['height_scale'])
         
-        # Apply fixed cutout using stored positions
+        # Apply fixed cutout with orientation consideration
         crop_size = int(min(width, height) * container['cutout_size'])
-        start_x = int((width - crop_size) * container['cutout_x'])
-        start_y = int((height - crop_size) * container['cutout_y'])
-        frame = frame[start_y:start_y+crop_size, start_x:start_x+crop_size]
-        
-        # Scale to fit container while maintaining aspect ratio
-        frame_ratio = frame.shape[1] / frame.shape[0]
-        container_ratio = target_width / target_height
-        
-        if frame_ratio > container_ratio:
-            new_height = target_height
-            new_width = int(new_height * frame_ratio)
+        if container['is_vertical']:
+            crop_width = crop_size
+            crop_height = int(crop_size * 1.5)  # Make vertical crops taller
         else:
-            new_width = target_width
-            new_height = int(new_width / frame_ratio)
+            crop_width = int(crop_size * 1.5)  # Make horizontal crops wider
+            crop_height = crop_size
         
-        frame = cv2.resize(frame, (new_width, new_height))
+        # Ensure crop dimensions don't exceed frame
+        crop_width = min(crop_width, width)
+        crop_height = min(crop_height, height)
         
-        # Center in container
-        container_frame = np.zeros((target_height, target_width, 3), dtype=np.uint8)
-        y_offset = (target_height - new_height) // 2
-        x_offset = (target_width - new_width) // 2
+        # Calculate crop position
+        start_x = int((width - crop_width) * container['cutout_x'])
+        start_y = int((height - crop_height) * container['cutout_y'])
         
-        if y_offset < 0:
-            frame = frame[-y_offset:target_height-y_offset, :]
-            y_offset = 0
-        if x_offset < 0:
-            frame = frame[:, -x_offset:target_width-x_offset]
-            x_offset = 0
+        # Apply crop
+        frame = frame[start_y:start_y+crop_height, start_x:start_x+crop_width]
         
-        try:
-            container_frame[y_offset:y_offset+frame.shape[0], 
-                           x_offset:x_offset+frame.shape[1]] = frame
-        except ValueError:
-            container_frame = cv2.resize(frame, (target_width, target_height))
+        # Calculate scaling factors for both dimensions
+        scale_x = target_width / frame.shape[1]
+        scale_y = target_height / frame.shape[0]
         
-        return container_frame, (target_width, target_height)
+        # Use the larger scaling factor to ensure the frame fills the container
+        scale = max(scale_x, scale_y)
+        
+        # Calculate new dimensions
+        new_width = int(frame.shape[1] * scale)
+        new_height = int(frame.shape[0] * scale)
+        
+        # Resize frame
+        frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+        
+        # Center crop to target size
+        start_x = (new_width - target_width) // 2
+        start_y = (new_height - target_height) // 2
+        
+        frame = frame[start_y:start_y+target_height, start_x:start_x+target_width]
+        
+        return frame, (target_width, target_height)
 
     def run(self):
         """Main video playback loop"""
@@ -126,37 +179,67 @@ class VideoPlayer:
         
         while True:
             if self.cap is None or not self.cap.isOpened():
-                # Load new video and generate new container settings
-                self.current_video = random.choice(self.videos)
-                print(f"Playing: {self.current_video}")
-                self.cap = cv2.VideoCapture(os.path.join(self.folder_path, self.current_video))
-                self.objects = self.generate_container_settings()
+                try:
+                    # Load new video and generate new container settings
+                    self.current_video = random.choice(self.videos)
+                    print(f"Playing: {self.current_video}")
+                    video_path = os.path.join(self.folder_path, self.current_video)
+                    
+                    if not os.path.exists(video_path):
+                        print(f"Error: Video file not found: {video_path}")
+                        continue
+                    
+                    self.cap = cv2.VideoCapture(video_path)
+                    if not self.cap.isOpened():
+                        print(f"Error: Could not open video: {video_path}")
+                        continue
+                    
+                    self.objects = self.generate_container_settings()
+                except Exception as e:
+                    print(f"Error loading video: {str(e)}")
+                    if self.cap is not None:
+                        self.cap.release()
+                    self.cap = None
+                    continue
             
             # Clear display
             display.fill(0)
             
             # Read frame
-            ret, frame = self.cap.read()
-            if not ret:
-                self.cap.release()
+            try:
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    print(f"End of video or error reading frame: {self.current_video}")
+                    self.cap.release()
+                    self.cap = None
+                    continue
+                
+                # Draw each container
+                for i, container in enumerate(self.objects):
+                    try:
+                        container_frame, (w, h) = self.apply_container_transform(frame.copy(), container)
+                        x, y = container['position']
+                        
+                        # Add text above container
+                        text_y = max(y - 15, 0)  # Position text 15 pixels above container
+                        text = f"Vid: {self.current_video[:20]} | Pos: ({x},{y}) | Scale: {container['width_scale']:.2f}x{container['height_scale']:.2f}"
+                        cv2.putText(display, text, (x, text_y), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                        
+                        # Draw container frame
+                        display[y:y+h, x:x+w] = container_frame
+                    except Exception as e:
+                        print(f"Error processing container: {str(e)}")
+                        continue
+                
+                cv2.imshow('Video Display', display)
+                
+            except Exception as e:
+                print(f"Error in main loop: {str(e)}")
+                if self.cap is not None:
+                    self.cap.release()
                 self.cap = None
                 continue
-            
-            # Draw each container
-            for i, container in enumerate(self.objects):
-                container_frame, (w, h) = self.apply_container_transform(frame.copy(), container)
-                x, y = container['position']
-                
-                # Ensure container stays within display bounds
-                x = max(0, min(x, self.display_width - w))
-                y = max(0, min(y, self.display_height - h))
-                
-                try:
-                    display[int(y):int(y+h), int(x):int(x+w)] = container_frame
-                except:
-                    continue
-            
-            cv2.imshow('Video Display', display)
             
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
