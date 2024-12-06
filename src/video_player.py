@@ -77,6 +77,10 @@ class VideoPlayer:
                 print(f"Error: Could not open video: {video_path}")
                 return False
             
+            # Get video properties
+            self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+            self.frame_time = 1000 / self.fps  # Time per frame in milliseconds
+            
             self.objects = self.container_transform.generate_container_settings()
             
             # Set video capture buffer size

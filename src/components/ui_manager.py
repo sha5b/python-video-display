@@ -169,10 +169,10 @@ class UIManager:
         """Create and configure the OpenCV window"""
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
     
-    def update_display(self, frame) -> str:
+    def update_display(self, frame, wait_time: int) -> str:
         """Update the display and handle window events"""
         cv2.imshow(self.window_name, frame)
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(wait_time) & 0xFF
         if key == ord('q'):
             return 'q'
         elif key == ord('s'):
