@@ -71,13 +71,16 @@ class ContainerTransform:
                 self.max_scale * scale_factor
             )
             
-            # Determine orientation and aspect ratio
+            # More varied aspect ratios
             is_vertical = random.random() > 0.5
-            aspect_ratio = random.uniform(1.5, 2.0) if is_vertical else random.uniform(0.5, 0.8)
+            if is_vertical:
+                aspect_ratio = random.uniform(0.8, 2.5)  # More extreme vertical variations
+            else:
+                aspect_ratio = random.uniform(0.4, 1.25)  # More extreme horizontal variations
             
             # Calculate dimensions
-            width = base_size * (aspect_ratio if not is_vertical else 1)
-            height = base_size * (aspect_ratio if is_vertical else 1)
+            width = base_size * (1/aspect_ratio if is_vertical else aspect_ratio)
+            height = base_size * (aspect_ratio if is_vertical else 1/aspect_ratio)
             
             target_width = int(self.display_width * width)
             target_height = int(self.display_height * height)

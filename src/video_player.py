@@ -134,8 +134,7 @@ class VideoPlayer:
                         display[y:y+h, x:x+w] = container_frame
                         
                         # Draw text overlay
-                        text = f"{self.current_video[:20]} | ({x},{y}) | {container['width_scale']:.2f}x{container['height_scale']:.2f}"
-                        self.text_overlay.render(display, text, (x, y), 
+                        self.text_overlay.render(display, "", (x, y), 
                                               container['rotation'], 
                                               self.display_width, 
                                               self.display_height)
@@ -145,7 +144,7 @@ class VideoPlayer:
                         continue
                 
                 # Update display and check for quit or settings
-                key = self.ui_manager.update_display(display)
+                key = self.ui_manager.update_display(display, int(self.frame_time))
                 if key == 'q':
                     break
                 elif key == 's':
