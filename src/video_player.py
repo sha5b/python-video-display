@@ -68,12 +68,9 @@ class VideoPlayer:
             target_width = int(self.display_width * width)
             target_height = int(self.display_height * height)
             
-            # Try to find a position with minimal overlap
+            # Try to find a position with no overlap
             best_position = None
-            min_overlap = float('inf')
-            
-            # Try several random positions and pick the one with least overlap
-            for _ in range(10):  # Number of attempts to find good position
+            for _ in range(100):  # Increase attempts to find a non-overlapping position
                 x = random.randint(0, max(0, self.display_width - target_width))
                 y = random.randint(0, max(0, self.display_height - target_height))
                 
@@ -83,16 +80,23 @@ class VideoPlayer:
                 grid_w = int(target_width * grid_size / self.display_width)
                 grid_h = int(target_height * grid_size / self.display_height)
                 
-                # Calculate overlap in grid
-                overlap = 0
+                # Check for overlap in grid
+                overlap = False
                 for gx in range(max(0, grid_x), min(grid_size, grid_x + grid_w)):
                     for gy in range(max(0, grid_y), min(grid_size, grid_y + grid_h)):
                         if occupied_grid[gy, gx]:
-                            overlap += 1
+                            overlap = True
+                            break
+                    if overlap:
+                        break
                 
-                if overlap < min_overlap:
-                    min_overlap = overlap
+                if not overlap:
                     best_position = (x, y)
+                    break
+            
+            if best_position is None:
+                print("Warning: Could not find non-overlapping position for container")
+                continue
             
             # Update occupied grid with chosen position
             grid_x = int(best_position[0] * grid_size / self.display_width)
@@ -164,89 +168,122 @@ class VideoPlayer:
         start_x = (new_width - target_width) // 2
         start_y = (new_height - target_height) // 2
         
-        frame = frame[start_y:start_y+target_height, start_x:start_x+target_width]
+        # Add bounds checking to prevent array broadcast errors
+        end_x = min(start_x + target_width, new_width)
+        end_y = min(start_y + target_height, new_height)
         
-        return frame, (target_width, target_height)
+        # Create a black frame of the target size
+        output_frame = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+        
+        # Calculate the valid region to copy
+        valid_height = min(frame.shape[0], target_height)
+        valid_width = min(frame.shape[1], target_width)
+        
+        # Create a centered slice of the output frame
+        y_offset = (target_height - valid_height) // 2
+        x_offset = (target_width - valid_width) // 2
+        
+        # Copy the valid region to the center of the output frame
+        output_frame[
+            y_offset:y_offset+valid_height,
+            x_offset:x_offset+valid_width
+        ] = frame[
+            :valid_height,
+            :valid_width
+        ]
+        
+        return output_frame, (target_width, target_height)
 
     def run(self):
         """Main video playback loop"""
-        if not self.videos:
-            print("No videos found in the specified folder")
-            return
+        try:
+            if not self.videos:
+                print("No videos found in the specified folder")
+                return
             
-        display = np.zeros((self.display_height, self.display_width, 3), dtype=np.uint8)
-        cv2.namedWindow('Video Display', cv2.WINDOW_NORMAL)
-        
-        while True:
-            if self.cap is None or not self.cap.isOpened():
+            display = np.zeros((self.display_height, self.display_width, 3), dtype=np.uint8)
+            cv2.namedWindow('Video Display', cv2.WINDOW_NORMAL)
+            
+            while True:
+                if self.cap is None or not self.cap.isOpened():
+                    try:
+                        # Load new video and generate new container settings
+                        self.current_video = random.choice(self.videos)
+                        print(f"Playing: {self.current_video}")
+                        video_path = os.path.join(self.folder_path, self.current_video)
+                        
+                        if not os.path.exists(video_path):
+                            print(f"Error: Video file not found: {video_path}")
+                            continue
+                        
+                        self.cap = cv2.VideoCapture(video_path)
+                        if not self.cap.isOpened():
+                            print(f"Error: Could not open video: {video_path}")
+                            continue
+                        
+                        self.objects = self.generate_container_settings()
+                        
+                        # Get the FPS of the video
+                        fps = self.cap.get(cv2.CAP_PROP_FPS)
+                        frame_delay = int(1000 / fps)  # Calculate delay in milliseconds
+                    except Exception as e:
+                        print(f"Error loading video: {str(e)}")
+                        if self.cap is not None:
+                            self.cap.release()
+                        self.cap = None
+                        continue
+                
+                # Clear display
+                display.fill(0)
+                
+                # Read frame
                 try:
-                    # Load new video and generate new container settings
-                    self.current_video = random.choice(self.videos)
-                    print(f"Playing: {self.current_video}")
-                    video_path = os.path.join(self.folder_path, self.current_video)
-                    
-                    if not os.path.exists(video_path):
-                        print(f"Error: Video file not found: {video_path}")
+                    ret, frame = self.cap.read()
+                    if not ret or frame is None:
+                        print(f"End of video or error reading frame: {self.current_video}")
+                        self.cap.release()
+                        self.cap = None
                         continue
                     
-                    self.cap = cv2.VideoCapture(video_path)
-                    if not self.cap.isOpened():
-                        print(f"Error: Could not open video: {video_path}")
-                        continue
+                    # Draw each container
+                    for i, container in enumerate(self.objects):
+                        try:
+                            container_frame, (w, h) = self.apply_container_transform(frame.copy(), container)
+                            x, y = container['position']
+                            
+                            # Add text above container
+                            text_y = max(y - 15, 0)  # Position text 15 pixels above container
+                            text = f"Vid: {self.current_video[:20]} | Pos: ({x},{y}) | Scale: {container['width_scale']:.2f}x{container['height_scale']:.2f}"
+                            cv2.putText(display, text, (x, text_y), 
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                            
+                            # Draw container frame
+                            display[y:y+h, x:x+w] = container_frame
+                        except Exception as e:
+                            print(f"Error processing container: {str(e)}")
+                            continue
                     
-                    self.objects = self.generate_container_settings()
+                    cv2.imshow('Video Display', display)
+                    
                 except Exception as e:
-                    print(f"Error loading video: {str(e)}")
+                    print(f"Error in main loop: {str(e)}")
                     if self.cap is not None:
                         self.cap.release()
                     self.cap = None
                     continue
-            
-            # Clear display
-            display.fill(0)
-            
-            # Read frame
-            try:
-                ret, frame = self.cap.read()
-                if not ret or frame is None:
-                    print(f"End of video or error reading frame: {self.current_video}")
-                    self.cap.release()
-                    self.cap = None
-                    continue
                 
-                # Draw each container
-                for i, container in enumerate(self.objects):
-                    try:
-                        container_frame, (w, h) = self.apply_container_transform(frame.copy(), container)
-                        x, y = container['position']
-                        
-                        # Add text above container
-                        text_y = max(y - 15, 0)  # Position text 15 pixels above container
-                        text = f"Vid: {self.current_video[:20]} | Pos: ({x},{y}) | Scale: {container['width_scale']:.2f}x{container['height_scale']:.2f}"
-                        cv2.putText(display, text, (x, text_y), 
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-                        
-                        # Draw container frame
-                        display[y:y+h, x:x+w] = container_frame
-                    except Exception as e:
-                        print(f"Error processing container: {str(e)}")
-                        continue
+                if cv2.waitKey(frame_delay) & 0xFF == ord('q'):
+                    break
                 
-                cv2.imshow('Video Display', display)
-                
-            except Exception as e:
-                print(f"Error in main loop: {str(e)}")
-                if self.cap is not None:
-                    self.cap.release()
-                self.cap = None
-                continue
-            
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-                
-        if self.cap is not None:
-            self.cap.release()
-        cv2.destroyAllWindows()
+            if self.cap is not None:
+                self.cap.release()
+            cv2.destroyAllWindows()
+        except KeyboardInterrupt:
+            print("\nExiting video player...")
+        finally:
+            if self.cap is not None:
+                self.cap.release()
+            cv2.destroyAllWindows()
 
 class VideoPlayerGUI:
     def __init__(self):
