@@ -14,11 +14,14 @@ class TextOverlay:
         self.line_color = self._generate_bright_color()
         self.grid_color = self._generate_bright_color()
         
-        # Fixed measurements in display order
+        # Fixed measurements with scientific-sounding names
         self.measurements = [
-            ('QUANTUM FLUX', {'min': 0.001, 'max': 9.999, 'unit': 'QF'}),
-            ('CONDENSATION', {'min': 20.0, 'max': 99.9, 'unit': '%'}),
-            ('TEMPERATURE', {'min': -273.15, 'max': 100.0, 'unit': '°K'})
+            ('NEUTRINO OSCILLATION', {'min': 0.001, 'max': 9.999, 'unit': 'NO'}),
+            ('GRAVITON FLUX', {'min': 20.0, 'max': 99.9, 'unit': 'GF'}),
+            ('ENTROPY LEVEL', {'min': -273.15, 'max': 100.0, 'unit': 'EL'}),
+            ('PHOTON DENSITY', {'min': 0.1, 'max': 1000.0, 'unit': 'PD'}),
+            ('QUARK SPIN', {'min': 0.0, 'max': 1.0, 'unit': 'QS'}),
+            ('HIGGS FIELD', {'min': 0.01, 'max': 10.0, 'unit': 'HF'})
         ]
 
     def _generate_bright_color(self):
@@ -61,8 +64,8 @@ class TextOverlay:
         # Get text width for the underline
         (text_width, _) = cv2.getTextSize(text, self.font, self.font_scale, self.font_thickness)[0]
         
-        # Draw single line under the text
-        final_y = start_y + 25
+        # Draw single line under the text with adjusted padding
+        final_y = start_y + 15  # Reduced padding between text and line
         cv2.line(display,
                 (x - 5, final_y + 5),
                 (display.shape[1] - 10, final_y + 5),  # Extends to screen edge

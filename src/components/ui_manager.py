@@ -35,6 +35,9 @@ class UIManager:
         # Window settings
         self.window_name = 'Video Display'
         
+        self.started = False
+        self.fullscreen = False  # Track fullscreen state
+    
     def load_settings(self) -> Dict:
         """Load settings from JSON file"""
         try:
@@ -125,6 +128,9 @@ class UIManager:
         # Start button
         ttk.Button(self.main_frame, text="Start", command=self.start).grid(row=10, column=0, columnspan=2, pady=20)
         
+        # Fullscreen button
+        ttk.Button(self.main_frame, text="Toggle Fullscreen", command=self.toggle_fullscreen).grid(row=11, column=0, columnspan=2, pady=10)
+        
         # Center the window
         self.root.update_idletasks()
         width = self.root.winfo_width()
@@ -177,6 +183,8 @@ class UIManager:
             return 'q'
         elif key == ord('s'):
             return 's'
+        elif key == ord('f'):  # Use 'f' key to toggle fullscreen
+            self.toggle_fullscreen()
         return ''
     
     def cleanup(self) -> None:
@@ -184,3 +192,11 @@ class UIManager:
         cv2.destroyAllWindows()
         if self.root:
             self.root.destroy() 
+    
+    def toggle_fullscreen(self):
+        """Toggle fullscreen mode for the video window"""
+        self.fullscreen = not self.fullscreen
+        if self.fullscreen:
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        else:
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL) 
