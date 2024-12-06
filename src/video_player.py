@@ -67,33 +67,31 @@ class VideoPlayer:
                 self.cap.release()
                 
             self.current_video = random.choice(self.videos)
-            print(f"Playing: {self.current_video}")
             video_path = os.path.join(self.folder_path, self.current_video)
             
             if not os.path.exists(video_path):
-                print(f"Error: Video file not found: {video_path}")
                 return False
             
             self.cap = cv2.VideoCapture(video_path)
             if not self.cap.isOpened():
-                print(f"Error: Could not open video: {video_path}")
                 return False
+            
+            # Optimize capture settings for Raspberry Pi
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer size
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.display_width)  # Set capture size
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.display_height)
             
             # Get video properties
             self.fps = self.cap.get(cv2.CAP_PROP_FPS)
-            self.frame_time = 1000 / self.fps  # Time per frame in milliseconds
+            self.frame_time = 1000 / self.fps
             
             self.objects = self.container_transform.generate_container_settings()
-            
-            # Set video capture buffer size
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             return True
             
         except Exception as e:
             print(f"Error loading video: {str(e)}")
             if self.cap is not None:
                 self.cap.release()
-                self.cap = None
             return False
 
     def run(self):
@@ -107,6 +105,9 @@ class VideoPlayer:
             self.ui_manager.create_window()
             display = np.zeros((self.display_height, self.display_width, 3), dtype=np.uint8)
             
+            # Pre-allocate frame buffer
+            frame_buffer = np.zeros((self.display_height, self.display_width, 3), dtype=np.uint8)
+            
             # Load first video
             if not self.load_next_video():
                 return
@@ -115,45 +116,36 @@ class VideoPlayer:
             
             while True:
                 if not ret or frame is None:
-                    print(f"End of video or error reading frame: {self.current_video}")
                     if not self.load_next_video():
                         continue
                     ret, frame = self.cap.read()
                     if not ret or frame is None:
                         continue
                 
+                # Clear display buffer efficiently
                 display.fill(0)
                 
-                # Render background elements first
-                self.background_elements.render(display)
-                
-                # Process containers
+                # Process containers in batch
                 for container in self.objects:
                     try:
-                        # Apply container transform
+                        # Reuse frame buffer
+                        np.copyto(frame_buffer, frame)
                         container_frame, (w, h) = self.container_transform.apply_transform(
-                            frame.copy(), container)
+                            frame_buffer, container)
                         
                         # Draw container
                         x, y = container['position']
                         display[y:y+h, x:x+w] = container_frame
                         
-                        # Draw text overlay
-                        self.text_overlay.render(display, "", (x, y), 
-                                              container['rotation'], 
-                                              self.display_width, 
-                                              self.display_height)
-                        
                     except Exception as e:
                         print(f"Error processing container: {str(e)}")
                         continue
                 
-                # Update display and check for quit or settings
+                # Update display
                 key = self.ui_manager.update_display(display, int(self.frame_time))
                 if key == 'q':
                     break
                 elif key == 's':
-                    # Show settings UI
                     new_settings = self.ui_manager.get_settings_with_ui()
                     if new_settings:
                         self.apply_settings(new_settings)
@@ -161,7 +153,7 @@ class VideoPlayer:
                         if not self.load_next_video():
                             continue
                 
-                # Read next frame while displaying current one
+                # Read next frame
                 ret, frame = self.cap.read()
             
         except KeyboardInterrupt:
