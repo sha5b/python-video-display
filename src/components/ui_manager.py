@@ -11,7 +11,7 @@ class UIManager:
         # Initialize Tkinter
         self.root = tk.Tk()
         self.root.title("Video Display Settings")
-        self.root.withdraw()  # Hide window initially
+        self.root.withdraw()  # Hide window initially to avoid blocking
         
         # Settings file path
         self.settings_file = os.path.join(os.path.dirname(__file__), '..', 'settings.json')
@@ -40,7 +40,7 @@ class UIManager:
         self.fullscreen = False  # Track fullscreen state
     
     def load_settings(self) -> Dict:
-        """Load settings from JSON file"""
+        """Load settings from JSON file."""
         try:
             if os.path.exists(self.settings_file):
                 with open(self.settings_file, 'r') as f:
@@ -68,7 +68,7 @@ class UIManager:
         }
         
     def save_settings(self, settings: Dict) -> None:
-        """Save settings to JSON file"""
+        """Save settings to JSON file."""
         try:
             os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
             with open(self.settings_file, 'w') as f:
@@ -77,7 +77,7 @@ class UIManager:
             print(f"Error saving settings: {e}")
     
     def get_current_settings(self) -> Dict:
-        """Get current settings without showing UI"""
+        """Get current settings without showing UI."""
         try:
             return {
                 'display_width': int(self.settings['display_width'].get()),
@@ -92,13 +92,19 @@ class UIManager:
             print(f"Error parsing settings: {e}")
             return None
     
-    def get_settings_with_ui(self) -> Dict:
-        """Show UI and get settings"""
+    def get_settings_with_ui(self) -> Optional[Dict]:
+        """Show UI and get settings."""
         self.root.deiconify()  # Show window
-        return self.get_settings()
+        self.root.mainloop()  # Start the Tkinter loop
+        if self.started:
+            settings = self.get_current_settings()
+            if settings:
+                self.save_settings(settings)
+            return settings
+        return None
     
     def create_ui_elements(self):
-        """Create all UI elements"""
+        """Create all UI elements."""
         # Create and pack the main frame
         self.main_frame = ttk.Frame(self.root, padding="10")
         self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -129,7 +135,7 @@ class UIManager:
         # Start button
         ttk.Button(self.main_frame, text="Start", command=self.start).grid(row=10, column=0, columnspan=2, pady=20)
         
-        # Fullscreen button
+        # Fullscreen toggle button
         ttk.Button(self.main_frame, text="Toggle Fullscreen", command=self.toggle_fullscreen).grid(row=11, column=0, columnspan=2, pady=10)
         
         # Center the window
@@ -143,7 +149,7 @@ class UIManager:
         self.started = False
     
     def browse_folder(self):
-        """Open folder selection dialog"""
+        """Open folder selection dialog."""
         initial_dir = self.settings['folder_path'].get() or os.path.expanduser('~')
         folder_path = filedialog.askdirectory(
             title='Select Video Folder',
@@ -153,36 +159,22 @@ class UIManager:
             self.settings['folder_path'].set(folder_path)
     
     def start(self):
-        """Start button callback"""
+        """Start button callback."""
         self.started = True
         self.root.withdraw()  # Hide window instead of quitting
         self.root.quit()
     
-    def get_settings(self) -> Dict:
-        """Run the UI and return the settings"""
-        self.started = False
-        self.root.mainloop()
-        
-        if not self.started:
-            return None
-            
-        settings = self.get_current_settings()
-        if settings:
-            self.save_settings(settings)
-        
-        return settings
-    
     def create_window(self) -> None:
-        """Create and configure the OpenCV window"""
+        """Create and configure the OpenCV window."""
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
         if platform.system() == "Linux":
             # For Raspberry Pi, set initial window size
             cv2.resizeWindow(self.window_name, 
-                            int(self.settings['display_width'].get()), 
-                            int(self.settings['display_height'].get()))
+                             int(self.settings['display_width'].get()), 
+                             int(self.settings['display_height'].get()))
     
     def update_display(self, frame, wait_time: int) -> str:
-        """Update the display and handle window events"""
+        """Update the display and handle window events."""
         cv2.imshow(self.window_name, frame)
         key = cv2.waitKey(wait_time) & 0xFF
         if key == ord('q'):
@@ -194,13 +186,13 @@ class UIManager:
         return ''
     
     def cleanup(self) -> None:
-        """Cleanup UI resources"""
+        """Cleanup UI resources."""
         cv2.destroyAllWindows()
         if self.root and self.root.winfo_exists():  # Check if root window still exists
             self.root.destroy()
     
     def toggle_fullscreen(self):
-        """Toggle fullscreen state for the video window"""
+        """Toggle fullscreen state for the video window."""
         self.fullscreen = not self.fullscreen
         cv2.setWindowProperty(
             self.window_name,
@@ -210,6 +202,5 @@ class UIManager:
         if not self.fullscreen:
             # When exiting fullscreen, restore window size
             cv2.resizeWindow(self.window_name, 
-                            int(self.settings['display_width'].get()),
-                            int(self.settings['display_height'].get()))
-    
+                             int(self.settings['display_width'].get()),
+                             int(self.settings['display_height'].get()))
