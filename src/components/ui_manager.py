@@ -4,6 +4,7 @@ from tkinter import filedialog, ttk
 import os
 import json
 from typing import Optional, Tuple, Dict
+import platform
 
 class UIManager:
     def __init__(self):
@@ -174,6 +175,11 @@ class UIManager:
     def create_window(self) -> None:
         """Create and configure the OpenCV window"""
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        if platform.system() == "Linux":
+            # For Raspberry Pi, set initial window size
+            cv2.resizeWindow(self.window_name, 
+                            int(self.settings['display_width'].get()), 
+                            int(self.settings['display_height'].get()))
     
     def update_display(self, frame, wait_time: int) -> str:
         """Update the display and handle window events"""
@@ -194,5 +200,16 @@ class UIManager:
             self.root.destroy()
     
     def toggle_fullscreen(self):
+        """Toggle fullscreen state for the video window"""
         self.fullscreen = not self.fullscreen
-        self.root.attributes("-fullscreen", self.fullscreen) 
+        cv2.setWindowProperty(
+            self.window_name,
+            cv2.WND_PROP_FULLSCREEN,
+            cv2.WINDOW_FULLSCREEN if self.fullscreen else cv2.WINDOW_NORMAL
+        )
+        if not self.fullscreen:
+            # When exiting fullscreen, restore window size
+            cv2.resizeWindow(self.window_name, 
+                            int(self.settings['display_width'].get()),
+                            int(self.settings['display_height'].get()))
+    
