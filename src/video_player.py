@@ -17,8 +17,6 @@ def configure_video_backend():
 from components.text_overlay import TextOverlay
 from components.container_transform import ContainerTransform
 from components.ui_manager import UIManager
-from components.background_elements import BackgroundElements
-
 
 class VideoPlayer:
     def __init__(self):
@@ -87,7 +85,6 @@ class VideoPlayer:
             min_scale=settings['min_scale'],
             max_scale=settings['max_scale']
         )
-        self.background_elements = BackgroundElements()
 
         # Initialize video handling
         self.videos = self.load_videos()
@@ -187,36 +184,66 @@ class VideoPlayer:
                     if not ret or frame is None:
                         continue
 
-                # Optimize frame processing
-                # Resize frame first to reduce processing overhead
-                frame = cv2.resize(frame, (self.display_width, self.display_height))
-                
-                # Use frame as base instead of clearing display buffer
+                # Get current window dimensions
+                window_width = self.display_width
+                window_height = self.display_height
+
+                # Calculate scaling to cover entire window while maintaining aspect ratio
+                frame_aspect = frame.shape[1] / frame.shape[0]
+                window_aspect = window_width / window_height
+
+                if frame_aspect > window_aspect:
+                    # Frame is wider - scale to fit height and crop width
+                    frame_height = window_height
+                    frame_width = int(window_height * frame_aspect)
+                    frame = cv2.resize(frame, (frame_width, frame_height))
+                    # Crop the width to fill window
+                    start_x = (frame_width - window_width) // 2
+                    frame = frame[:, start_x:start_x + window_width]
+                else:
+                    # Frame is taller - scale to fit width and crop height
+                    frame_width = window_width
+                    frame_height = int(window_width / frame_aspect)
+                    frame = cv2.resize(frame, (frame_width, frame_height))
+                    # Crop the height to fill window
+                    start_y = (frame_height - window_height) // 2
+                    frame = frame[start_y:start_y + window_height]
+
+                # Set the frame directly as the display
                 display = frame.copy()
 
-                # Reduce background elements update frequency
-                if frame_count % 3 == 0:  # Update every 3rd frame
-                    self.background_elements.render(display, frame_count)
+                # Dim the background video
+                display = cv2.multiply(display, 0.6).astype(np.uint8)
 
-                # Process containers with optimized rendering
-                container_count = 0
-                max_containers = 3  # Limit number of simultaneous containers
+                # Process containers and overlay them on top of the video
                 for container in self.objects:
-                    if container_count >= max_containers:
-                        break
-                        
                     try:
-                        # Simplified transform for better performance
+                        # Transform and position container
                         container_frame, (w, h) = self.container_transform.apply_transform(frame, container)
-                        x, y = container['position']
+                        base_x, base_y = container['position']
                         
-                        # Use numpy's optimized array operations
-                        y_end = min(y + h, self.display_height)
-                        x_end = min(x + w, self.display_width)
-                        if y < self.display_height and x < self.display_width:
-                            display[y:y_end, x:x_end] = container_frame[:y_end-y, :x_end-x]
+                        # Use base position directly since frame fills entire window
+                        x = base_x
+                        y = base_y
                         
-                        container_count += 1
+                        # Add text overlay for this container
+                        self.text_overlay.render(display, "", (x, y))
+                        
+                        # Ensure container stays within display bounds
+                        y_end = min(y + h, window_height)
+                        x_end = min(x + w, window_width)
+                        
+                        # Only draw container if it's within display bounds
+                        if y < window_height and x < window_width and y >= 0 and x >= 0:
+                            # Calculate source region based on clipping
+                            src_y = 0 if y >= 0 else -y
+                            src_x = 0 if x >= 0 else -x
+                            src_h = min(container_frame.shape[0] - src_y, y_end - max(y, 0))
+                            src_w = min(container_frame.shape[1] - src_x, x_end - max(x, 0))
+                            
+                            if src_h > 0 and src_w > 0:
+                                display[max(y, 0):y_end, max(x, 0):x_end] = \
+                                    container_frame[src_y:src_y+src_h, src_x:src_x+src_w]
 
                     except Exception as e:
                         print(f"Error processing container: {str(e)}")
