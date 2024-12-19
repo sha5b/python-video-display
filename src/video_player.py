@@ -48,14 +48,42 @@ class VideoPlayer:
         """Detect the system's current screen resolution."""
         if platform.machine().startswith('arm'):  # Raspberry Pi
             try:
-                # Try to get resolution from vcgencmd
+                # Try multiple methods to get resolution
                 import subprocess
-                output = subprocess.check_output(['vcgencmd', 'get_lcd_info'], universal_newlines=True)
-                width, height = map(int, output.strip().split(' ')[1].split('x'))
-                return width, height
+                
+                # Method 1: Try tvservice
+                try:
+                    output = subprocess.check_output(['tvservice', '-s'], universal_newlines=True)
+                    # Output format: "state 0x120006 [HDMI CEA (16) RGB lim 16:9], 1920x1080 @ 60.00Hz"
+                    resolution = output.split(", ")[1].split(" @")[0]
+                    width, height = map(int, resolution.split("x"))
+                    print(f"Detected resolution from tvservice: {width}x{height}")
+                    return width, height
+                except Exception as e:
+                    print(f"tvservice detection failed: {e}")
+                
+                # Method 2: Try vcgencmd
+                try:
+                    output = subprocess.check_output(['vcgencmd', 'get_lcd_info'], universal_newlines=True)
+                    width, height = map(int, output.strip().split(' ')[1].split('x'))
+                    print(f"Detected resolution from vcgencmd: {width}x{height}")
+                    return width, height
+                except Exception as e:
+                    print(f"vcgencmd detection failed: {e}")
+                
+                # Method 3: Try reading from /sys/class/graphics
+                try:
+                    with open('/sys/class/graphics/fb0/virtual_size', 'r') as f:
+                        width, height = map(int, f.read().strip().split(','))
+                        print(f"Detected resolution from framebuffer: {width}x{height}")
+                        return width, height
+                except Exception as e:
+                    print(f"Framebuffer detection failed: {e}")
+                
+                print("All resolution detection methods failed, using default")
+                return 1920, 1080
             except Exception as e:
-                print(f"Failed to get resolution from vcgencmd: {e}")
-                # Fallback to default Raspberry Pi resolution
+                print(f"Resolution detection error: {e}")
                 return 1920, 1080
         else:
             # For non-Raspberry Pi systems, use OpenCV window detection
@@ -118,15 +146,15 @@ class VideoPlayer:
 
             # Use GStreamer pipeline for hardware-accelerated decoding on Raspberry Pi
             if platform.machine().startswith('arm'):
+                # Don't force resolution in pipeline, let aspect ratio code handle it
                 gst_pipeline = (
                     f"filesrc location={video_path} ! "
                     "decodebin ! "
                     "videoconvert ! "
-                    "videoscale ! "
-                    f"video/x-raw,width={self.display_width},height={self.display_height} ! "
                     "appsink"
                 )
                 self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+                print(f"Using GStreamer pipeline for video: {video_path}")
             else:
                 self.cap = cv2.VideoCapture(video_path)
             if not self.cap.isOpened():
