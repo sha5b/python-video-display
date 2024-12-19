@@ -16,9 +16,13 @@ class ContainerTransform:
         self.cutout_min_size = 0.2  # Allow smaller cutouts
         self.cutout_max_size = 0.8  # Allow larger cutouts
         
-        # Grid system setup with dynamic spacing
-        self.grid_cols = 12  # Divide screen into 12 columns
-        self.grid_rows = 8   # and 8 rows
+        # Grid system setup with dynamic spacing based on orientation
+        if display_height > display_width:  # Portrait mode
+            self.grid_cols = 8   # Fewer columns in portrait
+            self.grid_rows = 12  # More rows in portrait
+        else:  # Landscape mode
+            self.grid_cols = 12  # More columns in landscape
+            self.grid_rows = 8   # Fewer rows in landscape
         self.spacing = int(min(display_width, display_height) * 0.02)  # Dynamic spacing based on screen size
         self.cell_width = (self.display_width - (self.grid_cols + 1) * self.spacing) / self.grid_cols
         self.cell_height = (self.display_height - (self.grid_rows + 1) * self.spacing) / self.grid_rows
@@ -58,11 +62,13 @@ class ContainerTransform:
         containers = []
         self.grid = [[False for _ in range(self.grid_cols)] for _ in range(self.grid_rows)]
         
-        # Define container types with varied sizes and weights
+        # Define container types with more variety and balanced weights
         container_types = [
-            ('vertical_stripe', 0.35),
-            ('horizontal_stripe', 0.35),
-            ('square', 0.3)
+            ('tall_portrait', 0.2),    # Very tall and narrow
+            ('wide_landscape', 0.2),    # Very wide and short
+            ('vertical_stripe', 0.2),   # Standard vertical
+            ('horizontal_stripe', 0.2), # Standard horizontal
+            ('square', 0.2)            # Square shapes
         ]
         
         attempts = count * 3  # Increase attempts for better placement
@@ -74,17 +80,27 @@ class ContainerTransform:
                 weights=[t[1] for t in container_types]
             )[0]
 
-            # Define grid cell requirements with more variation
-            if container_type == 'vertical_stripe':
-                width_cells = random.randint(1, 3)
-                height_cells = random.randint(3, 6)  # Allow taller vertical stripes
+            # Define grid cell requirements with orientation-aware variation
+            is_portrait = self.display_height > self.display_width
+            
+            if container_type == 'tall_portrait':
+                width_cells = random.randint(1, 2)
+                height_cells = random.randint(6, 10)  # Extra tall
+                is_vertical = True
+            elif container_type == 'wide_landscape':
+                width_cells = random.randint(6, 10)  # Extra wide
+                height_cells = random.randint(1, 2)
+                is_vertical = False
+            elif container_type == 'vertical_stripe':
+                width_cells = random.randint(2, 3)
+                height_cells = random.randint(4, 7)
                 is_vertical = True
             elif container_type == 'horizontal_stripe':
-                width_cells = random.randint(3, 6)  # Allow wider horizontal stripes
-                height_cells = random.randint(1, 3)
+                width_cells = random.randint(4, 7)
+                height_cells = random.randint(2, 3)
                 is_vertical = False
             else:  # square
-                size = random.randint(2, 4)  # Allow larger squares
+                size = random.randint(2, 5)  # Larger range for square sizes
                 width_cells = height_cells = size
                 is_vertical = random.choice([True, False])
 
@@ -103,8 +119,8 @@ class ContainerTransform:
                 base_width_scale = (width_cells * self.cell_width) / self.display_width
                 base_height_scale = (height_cells * self.cell_height) / self.display_height
                 
-                # Add scale variation
-                scale_variation = random.uniform(0.9, 1.1)
+                # Add more dramatic scale variation
+                scale_variation = random.uniform(0.8, 1.3)
                 width_scale = base_width_scale * scale_variation
                 height_scale = base_height_scale * scale_variation
                 
@@ -126,7 +142,7 @@ class ContainerTransform:
                     'cutout_x': random.random(),
                     'cutout_y': random.random(),
                     'is_vertical': is_vertical,
-                    'rotation': random.choice([0, 90]) if is_vertical else random.choice([0, 270])
+                    'rotation': random.choice([0, 90, 180, 270])  # Allow all rotation angles
                 }
                 
                 containers.append(container)

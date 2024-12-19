@@ -28,63 +28,35 @@ class VideoPlayer:
 
         # Get last used settings without showing UI
         settings = self.ui_manager.load_settings()
-        if not settings:
-            # If no settings exist, show UI to get initial settings
+        if not settings or not settings.get('folder_path'):
+            # If no settings exist or no folder path set, show UI to get initial settings
             settings = self.ui_manager.get_settings_with_ui()
             if not settings:
                 print("Setup cancelled")
                 return
 
-        # Always use detected system resolution, ignore settings file resolution
-        self.display_width = self.system_width
-        self.display_height = self.system_height
+        # On Raspberry Pi, force portrait resolution
+        if platform.machine().startswith('arm'):
+            self.display_width = 480
+            self.display_height = 1920
+            print(f"Forcing Raspberry Pi resolution to {self.display_width}x{self.display_height}")
+            # Update settings with forced resolution
+            settings['display_width'] = self.display_width
+            settings['display_height'] = self.display_height
+        else:
+            # For other systems, use detected resolution
+            self.display_width = self.system_width
+            self.display_height = self.system_height
+            settings['display_width'] = self.display_width
+            settings['display_height'] = self.display_height
         
-        # Apply other settings but keep detected resolution
-        settings['display_width'] = self.display_width
-        settings['display_height'] = self.display_height
         self.apply_settings(settings)
 
     def detect_system_resolution(self) -> tuple[int, int]:
         """Detect the system's current screen resolution."""
         if platform.machine().startswith('arm'):  # Raspberry Pi
-            try:
-                # Try multiple methods to get resolution
-                import subprocess
-                
-                # Method 1: Try tvservice
-                try:
-                    output = subprocess.check_output(['tvservice', '-s'], universal_newlines=True)
-                    # Output format: "state 0x120006 [HDMI CEA (16) RGB lim 16:9], 1920x1080 @ 60.00Hz"
-                    resolution = output.split(", ")[1].split(" @")[0]
-                    width, height = map(int, resolution.split("x"))
-                    print(f"Detected resolution from tvservice: {width}x{height}")
-                    return width, height
-                except Exception as e:
-                    print(f"tvservice detection failed: {e}")
-                
-                # Method 2: Try vcgencmd
-                try:
-                    output = subprocess.check_output(['vcgencmd', 'get_lcd_info'], universal_newlines=True)
-                    width, height = map(int, output.strip().split(' ')[1].split('x'))
-                    print(f"Detected resolution from vcgencmd: {width}x{height}")
-                    return width, height
-                except Exception as e:
-                    print(f"vcgencmd detection failed: {e}")
-                
-                # Method 3: Try reading from /sys/class/graphics
-                try:
-                    with open('/sys/class/graphics/fb0/virtual_size', 'r') as f:
-                        width, height = map(int, f.read().strip().split(','))
-                        print(f"Detected resolution from framebuffer: {width}x{height}")
-                        return width, height
-                except Exception as e:
-                    print(f"Framebuffer detection failed: {e}")
-                
-                print("All resolution detection methods failed, using default")
-                return 1920, 1080
-            except Exception as e:
-                print(f"Resolution detection error: {e}")
-                return 1920, 1080
+            # Always return the correct portrait resolution for Raspberry Pi
+            return 480, 1920
         else:
             # For non-Raspberry Pi systems, use OpenCV window detection
             cv2.namedWindow('temp_window', cv2.WINDOW_NORMAL)
@@ -188,7 +160,14 @@ class VideoPlayer:
             
             if not self.videos:
                 print("No videos found in the selected folder")
-                return
+                # Show UI to select a new folder
+                new_settings = self.ui_manager.get_settings_with_ui()
+                if new_settings:
+                    self.apply_settings(new_settings)
+                    if not self.videos:  # If still no videos, return
+                        return
+                else:
+                    return
 
             # Create display window
             self.ui_manager.create_window()
@@ -200,7 +179,14 @@ class VideoPlayer:
 
             # Load first video
             if not self.load_next_video():
-                return
+                # If video loading fails, show UI to select a new folder
+                new_settings = self.ui_manager.get_settings_with_ui()
+                if new_settings:
+                    self.apply_settings(new_settings)
+                    if not self.load_next_video():  # If still can't load video, return
+                        return
+                else:
+                    return
 
             ret, frame = self.cap.read()
 
@@ -220,6 +206,14 @@ class VideoPlayer:
                 frame_aspect = frame.shape[1] / frame.shape[0]
                 window_aspect = window_width / window_height
 
+                # For portrait display (height > width), rotate frame if needed
+                if window_height > window_width and frame_aspect > 1:
+                    # Input frame is landscape, but display is portrait
+                    # Rotate frame 90 degrees clockwise
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                    # Recalculate aspect ratios
+                    frame_aspect = frame.shape[1] / frame.shape[0]
+
                 if frame_aspect > window_aspect:
                     # Frame is wider - scale to fit height and crop width
                     frame_height = window_height
@@ -236,6 +230,8 @@ class VideoPlayer:
                     # Crop the height to fill window
                     start_y = (frame_height - window_height) // 2
                     frame = frame[start_y:start_y + window_height]
+
+                print(f"Frame dimensions: {frame.shape}, Window: {window_width}x{window_height}")
 
                 # Set the frame directly as the display
                 display = frame.copy()

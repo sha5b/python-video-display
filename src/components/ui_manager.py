@@ -19,10 +19,18 @@ class UIManager:
         # Load saved settings or use defaults
         saved_settings = self.load_settings()
         
+        # On Raspberry Pi, force portrait resolution
+        if platform.machine().startswith('arm'):
+            default_width = '480'
+            default_height = '1920'
+        else:
+            default_width = '1920'
+            default_height = '1080'
+        
         # Settings variables with saved or default values
         self.settings = {
-            'display_width': tk.StringVar(value=saved_settings.get('display_width', '1920')),
-            'display_height': tk.StringVar(value=saved_settings.get('display_height', '1080')),
+            'display_width': tk.StringVar(value=saved_settings.get('display_width', default_width)),
+            'display_height': tk.StringVar(value=saved_settings.get('display_height', default_height)),
             'min_objects': tk.StringVar(value=saved_settings.get('min_objects', '2')),
             'max_objects': tk.StringVar(value=saved_settings.get('max_objects', '10')),
             'min_scale': tk.StringVar(value=saved_settings.get('min_scale', '0.3')),
@@ -167,6 +175,10 @@ class UIManager:
     def create_window(self) -> None:
         """Create and configure the OpenCV window."""
         if platform.machine().startswith('arm'):  # Raspberry Pi
+            # Force correct portrait resolution
+            self.settings['display_width'].set('480')
+            self.settings['display_height'].set('1920')
+            
             # Create borderless window that will use system resolution
             cv2.namedWindow(self.window_name, cv2.WINDOW_GUI_NORMAL)
             # Move to top-left corner
@@ -174,6 +186,7 @@ class UIManager:
             # Immediately go fullscreen to use system resolution
             cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
             self.fullscreen = True
+            print(f"Created window with forced resolution: 480x1920")
         else:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
             # Let the window use system resolution in fullscreen
@@ -200,8 +213,18 @@ class UIManager:
     def toggle_fullscreen(self):
         """Toggle fullscreen state for the video window."""
         if platform.machine().startswith('arm'):  # On Raspberry Pi, always stay fullscreen
+            # Force portrait mode
+            width = int(self.settings['display_width'].get())
+            height = int(self.settings['display_height'].get())
+            if width > height:  # Ensure portrait orientation
+                self.settings['display_width'].set(str(height))
+                self.settings['display_height'].set(str(width))
+            # Always maintain fullscreen
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            self.fullscreen = True
             return
             
+        # Non-Raspberry Pi behavior
         self.fullscreen = not self.fullscreen
         cv2.setWindowProperty(
             self.window_name,
@@ -209,7 +232,7 @@ class UIManager:
             cv2.WINDOW_FULLSCREEN if self.fullscreen else cv2.WINDOW_NORMAL
         )
         if not self.fullscreen:
-            # When exiting fullscreen, restore window size
-            cv2.resizeWindow(self.window_name, 
-                           int(self.settings['display_width'].get()),
-                           int(self.settings['display_height'].get()))
+            # When exiting fullscreen, maintain portrait orientation if needed
+            width = int(self.settings['display_width'].get())
+            height = int(self.settings['display_height'].get())
+            cv2.resizeWindow(self.window_name, width, height)
