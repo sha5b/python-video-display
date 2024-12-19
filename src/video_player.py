@@ -37,9 +37,13 @@ class VideoPlayer:
                 print("Setup cancelled")
                 return
 
-        # Ensure settings use the detected system resolution
-        settings['display_width'] = self.system_width
-        settings['display_height'] = self.system_height
+        # Always use detected system resolution, ignore settings file resolution
+        self.display_width = self.system_width
+        self.display_height = self.system_height
+        
+        # Apply other settings but keep detected resolution
+        settings['display_width'] = self.display_width
+        settings['display_height'] = self.display_height
         self.apply_settings(settings)
 
     def detect_system_resolution(self) -> tuple[int, int]:
