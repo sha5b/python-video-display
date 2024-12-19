@@ -236,9 +236,6 @@ class VideoPlayer:
                 # Set the frame directly as the display
                 display = frame.copy()
 
-                # Dim the background video
-                display = cv2.multiply(display, 0.6).astype(np.uint8)
-
                 # Process containers and overlay them on top of the video
                 for container in self.objects:
                     try:
