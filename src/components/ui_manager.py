@@ -166,12 +166,23 @@ class UIManager:
     
     def create_window(self) -> None:
         """Create and configure the OpenCV window."""
-        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-        if platform.system() == "Linux":
-            # For Raspberry Pi, set initial window size
+        if platform.machine().startswith('arm'):  # Raspberry Pi
+            # Create borderless window
+            cv2.namedWindow(self.window_name, cv2.WINDOW_GUI_NORMAL)
+            # Move to top-left corner
+            cv2.moveWindow(self.window_name, 0, 0)
+            # Set window size to match display resolution
             cv2.resizeWindow(self.window_name, 
-                             int(self.settings['display_width'].get()), 
-                             int(self.settings['display_height'].get()))
+                           int(self.settings['display_width'].get()),
+                           int(self.settings['display_height'].get()))
+            # Immediately go fullscreen
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            self.fullscreen = True
+        else:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self.window_name, 
+                           int(self.settings['display_width'].get()),
+                           int(self.settings['display_height'].get()))
     
     def update_display(self, frame, wait_time: int) -> str:
         """Update the display and handle window events."""
@@ -193,6 +204,9 @@ class UIManager:
     
     def toggle_fullscreen(self):
         """Toggle fullscreen state for the video window."""
+        if platform.machine().startswith('arm'):  # On Raspberry Pi, always stay fullscreen
+            return
+            
         self.fullscreen = not self.fullscreen
         cv2.setWindowProperty(
             self.window_name,
@@ -202,5 +216,5 @@ class UIManager:
         if not self.fullscreen:
             # When exiting fullscreen, restore window size
             cv2.resizeWindow(self.window_name, 
-                             int(self.settings['display_width'].get()),
-                             int(self.settings['display_height'].get()))
+                           int(self.settings['display_width'].get()),
+                           int(self.settings['display_height'].get()))

@@ -3,6 +3,17 @@ import numpy as np
 import os
 import random
 from typing import List
+import platform
+
+# Configure OpenCV to use GStreamer pipeline for hardware acceleration on Raspberry Pi
+def configure_video_backend():
+    if platform.machine().startswith('arm'):  # Check if running on Raspberry Pi
+        # Use V4L2 backend with hardware acceleration
+        os.environ["OPENCV_VIDEOIO_PRIORITY_V4L2"] = "1"
+        os.environ["OPENCV_VIDEOIO_PRIORITY_MMAL"] = "1"
+        return True
+    return False
+
 from components.text_overlay import TextOverlay
 from components.container_transform import ContainerTransform
 from components.ui_manager import UIManager
@@ -33,12 +44,27 @@ class VideoPlayer:
 
     def detect_system_resolution(self) -> tuple[int, int]:
         """Detect the system's current screen resolution."""
-        screen = cv2.namedWindow('temp_window', cv2.WINDOW_NORMAL)
-        cv2.setWindowProperty('temp_window', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        screen_width = int(cv2.getWindowImageRect('temp_window')[2])
-        screen_height = int(cv2.getWindowImageRect('temp_window')[3])
-        cv2.destroyWindow('temp_window')
-        return screen_width, screen_height
+        if platform.machine().startswith('arm'):  # Raspberry Pi
+            try:
+                # Try to get resolution from vcgencmd
+                import subprocess
+                output = subprocess.check_output(['vcgencmd', 'get_lcd_info'], universal_newlines=True)
+                width, height = map(int, output.strip().split(' ')[1].split('x'))
+                return width, height
+            except Exception as e:
+                print(f"Failed to get resolution from vcgencmd: {e}")
+                # Fallback to default Raspberry Pi resolution
+                return 1920, 1080
+        else:
+            # For non-Raspberry Pi systems, use OpenCV window detection
+            cv2.namedWindow('temp_window', cv2.WINDOW_NORMAL)
+            cv2.moveWindow('temp_window', 0, 0)
+            cv2.setWindowProperty('temp_window', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            cv2.waitKey(100)
+            screen_width = int(cv2.getWindowImageRect('temp_window')[2])
+            screen_height = int(cv2.getWindowImageRect('temp_window')[3])
+            cv2.destroyWindow('temp_window')
+            return screen_width, screen_height
 
     def apply_settings(self, settings):
         """Apply the given settings to the video player."""
@@ -89,15 +115,28 @@ class VideoPlayer:
                 print(f"Video not found: {video_path}")
                 return False
 
-            self.cap = cv2.VideoCapture(video_path)
+            # Use GStreamer pipeline for hardware-accelerated decoding on Raspberry Pi
+            if platform.machine().startswith('arm'):
+                gst_pipeline = (
+                    f"filesrc location={video_path} ! "
+                    "decodebin ! "
+                    "videoconvert ! "
+                    "videoscale ! "
+                    f"video/x-raw,width={self.display_width},height={self.display_height} ! "
+                    "appsink"
+                )
+                self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+            else:
+                self.cap = cv2.VideoCapture(video_path)
             if not self.cap.isOpened():
                 print(f"Failed to open video: {video_path}")
                 return False
 
-            # Optimize capture settings for Raspberry Pi or other low-power devices
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer size
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.display_width)  # Set capture size
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.display_height)
+            # Optimize capture settings
+            if not platform.machine().startswith('arm'):  # Skip if using GStreamer pipeline
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer size
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.display_width)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.display_height)
 
             # Get video properties
             self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30.0  # Default to 30 FPS if unavailable
@@ -115,6 +154,9 @@ class VideoPlayer:
     def run(self):
         """Main video playback loop."""
         try:
+            # Configure video backend for Raspberry Pi
+            configure_video_backend()
+            
             if not self.videos:
                 print("No videos found in the selected folder")
                 return
@@ -141,29 +183,36 @@ class VideoPlayer:
                     if not ret or frame is None:
                         continue
 
-                # Clear display buffer
-                display.fill(0)
+                # Optimize frame processing
+                # Resize frame first to reduce processing overhead
+                frame = cv2.resize(frame, (self.display_width, self.display_height))
+                
+                # Use frame as base instead of clearing display buffer
+                display = frame.copy()
 
-                # Render background grid
-                self.background_elements.render(display, frame_count)
+                # Reduce background elements update frequency
+                if frame_count % 3 == 0:  # Update every 3rd frame
+                    self.background_elements.render(display, frame_count)
 
-                # Process containers and render text overlays
+                # Process containers with optimized rendering
+                container_count = 0
+                max_containers = 3  # Limit number of simultaneous containers
                 for container in self.objects:
+                    if container_count >= max_containers:
+                        break
+                        
                     try:
-                        # Transform and render container
+                        # Simplified transform for better performance
                         container_frame, (w, h) = self.container_transform.apply_transform(frame, container)
                         x, y = container['position']
-                        display[y:y + h, x:x + w] = container_frame
-
-                        # Render text overlay for the container
-                        self.text_overlay.render(
-                            display=display,
-                            text="",
-                            position=(x + w // 2, y - 10),  # Centered above the container
-                            rotation=0,
-                            display_width=self.display_width,
-                            display_height=self.display_height
-                        )
+                        
+                        # Use numpy's optimized array operations
+                        y_end = min(y + h, self.display_height)
+                        x_end = min(x + w, self.display_width)
+                        if y < self.display_height and x < self.display_width:
+                            display[y:y_end, x:x_end] = container_frame[:y_end-y, :x_end-x]
+                        
+                        container_count += 1
 
                     except Exception as e:
                         print(f"Error processing container: {str(e)}")
