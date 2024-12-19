@@ -185,15 +185,10 @@ class UIManager:
             cv2.resizeWindow(self.window_name, 480, 1920)
             # Move to top-left corner
             cv2.moveWindow(self.window_name, 0, 0)
-            
-            # First set to normal mode
-            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
-            cv2.waitKey(100)  # Brief delay
-            
-            # Then toggle to fullscreen
+            # Brief delay to allow window to settle
+            cv2.waitKey(100)
+            # Now go fullscreen
             cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-            cv2.waitKey(100)  # Brief delay
-            
             self.fullscreen = True
             print(f"Created window with forced resolution: 480x1920")
         else:
