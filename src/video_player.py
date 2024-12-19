@@ -206,30 +206,32 @@ class VideoPlayer:
                 frame_aspect = frame.shape[1] / frame.shape[0]
                 window_aspect = window_width / window_height
 
-                # For portrait display (height > width), rotate frame if needed
-                if window_height > window_width and frame_aspect > 1:
-                    # Input frame is landscape, but display is portrait
-                    # Rotate frame 90 degrees clockwise
+                # For Raspberry Pi (portrait display), always rotate landscape frames
+                if platform.machine().startswith('arm') and frame.shape[1] > frame.shape[0]:
                     frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                    # Recalculate aspect ratios
-                    frame_aspect = frame.shape[1] / frame.shape[0]
+                
+                # Get current frame dimensions after potential rotation
+                frame_height, frame_width = frame.shape[:2]
+                frame_aspect = frame_width / frame_height
+                window_aspect = window_width / window_height
 
+                # Scale frame to fit display while maintaining aspect ratio
                 if frame_aspect > window_aspect:
-                    # Frame is wider - scale to fit height and crop width
-                    frame_height = window_height
-                    frame_width = int(window_height * frame_aspect)
-                    frame = cv2.resize(frame, (frame_width, frame_height))
-                    # Crop the width to fill window
-                    start_x = (frame_width - window_width) // 2
-                    frame = frame[:, start_x:start_x + window_width]
+                    # Frame is wider - scale to fit height
+                    target_height = window_height
+                    target_width = int(window_height * frame_aspect)
                 else:
-                    # Frame is taller - scale to fit width and crop height
-                    frame_width = window_width
-                    frame_height = int(window_width / frame_aspect)
-                    frame = cv2.resize(frame, (frame_width, frame_height))
-                    # Crop the height to fill window
-                    start_y = (frame_height - window_height) // 2
-                    frame = frame[start_y:start_y + window_height]
+                    # Frame is taller - scale to fit width
+                    target_width = window_width
+                    target_height = int(window_width / frame_aspect)
+
+                # Resize frame
+                frame = cv2.resize(frame, (target_width, target_height))
+
+                # Center crop to window dimensions
+                start_x = (target_width - window_width) // 2 if target_width > window_width else 0
+                start_y = (target_height - window_height) // 2 if target_height > window_height else 0
+                frame = frame[start_y:start_y + window_height, start_x:start_x + window_width]
 
                 print(f"Frame dimensions: {frame.shape}, Window: {window_width}x{window_height}")
 
