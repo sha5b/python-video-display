@@ -35,38 +35,40 @@ class VideoPlayer:
                 print("Setup cancelled")
                 return
 
-        # On Raspberry Pi, force portrait resolution
-        if platform.machine().startswith('arm'):
-            self.display_width = 480
-            self.display_height = 1920
-            print(f"Forcing Raspberry Pi resolution to {self.display_width}x{self.display_height}")
-            # Update settings with forced resolution
-            settings['display_width'] = self.display_width
-            settings['display_height'] = self.display_height
-        else:
-            # For other systems, use detected resolution
-            self.display_width = self.system_width
-            self.display_height = self.system_height
-            settings['display_width'] = self.display_width
-            settings['display_height'] = self.display_height
+        # Use the detected system resolution
+        self.display_width = self.system_width
+        self.display_height = self.system_height
+        print(f"Using detected resolution: {self.display_width}x{self.display_height}")
+        
+        # Update settings with detected resolution
+        settings['display_width'] = self.display_width
+        settings['display_height'] = self.display_height
         
         self.apply_settings(settings)
 
     def detect_system_resolution(self) -> tuple[int, int]:
         """Detect the system's current screen resolution."""
+        # Create a temporary window to detect resolution
+        cv2.namedWindow('temp_window', cv2.WINDOW_NORMAL)
+        cv2.moveWindow('temp_window', 0, 0)
+        cv2.setWindowProperty('temp_window', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.waitKey(100)  # Wait for window to be created
+        
+        screen_rect = cv2.getWindowImageRect('temp_window')
+        cv2.destroyWindow('temp_window')
+        
+        if screen_rect is None:
+            print("Warning: Could not detect screen resolution")
+            return (1920, 1080)  # Default fallback
+            
+        width, height = screen_rect[2], screen_rect[3]
+        print(f"Detected system resolution: {width}x{height}")
+        
         if platform.machine().startswith('arm'):  # Raspberry Pi
-            # Always return the correct portrait resolution for Raspberry Pi
-            return 480, 1920
+            # For Raspberry Pi, ensure portrait orientation
+            return (min(width, height), max(width, height))
         else:
-            # For non-Raspberry Pi systems, use OpenCV window detection
-            cv2.namedWindow('temp_window', cv2.WINDOW_NORMAL)
-            cv2.moveWindow('temp_window', 0, 0)
-            cv2.setWindowProperty('temp_window', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-            cv2.waitKey(100)
-            screen_width = int(cv2.getWindowImageRect('temp_window')[2])
-            screen_height = int(cv2.getWindowImageRect('temp_window')[3])
-            cv2.destroyWindow('temp_window')
-            return screen_width, screen_height
+            return (width, height)
 
     def apply_settings(self, settings):
         """Apply the given settings to the video player."""
@@ -206,24 +208,35 @@ class VideoPlayer:
                 frame_aspect = frame.shape[1] / frame.shape[0]
                 window_aspect = window_width / window_height
 
-                # For Raspberry Pi (portrait display), always rotate landscape frames
-                if platform.machine().startswith('arm') and frame.shape[1] > frame.shape[0]:
-                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                
-                # Get current frame dimensions after potential rotation
+                # Get current frame dimensions
                 frame_height, frame_width = frame.shape[:2]
                 frame_aspect = frame_width / frame_height
                 window_aspect = window_width / window_height
+
+                # For Raspberry Pi in portrait mode
+                if platform.machine().startswith('arm'):
+                    # Always rotate landscape frames for portrait display
+                    if frame_width > frame_height:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                        # Update dimensions after rotation
+                        frame_height, frame_width = frame_width, frame_height
+                        frame_aspect = frame_width / frame_height
+                    
+                    print(f"Frame dimensions after rotation: {frame_width}x{frame_height}")
+                    print(f"Window dimensions: {window_width}x{window_height}")
+                    print(f"Aspects - Frame: {frame_aspect:.2f}, Window: {window_aspect:.2f}")
 
                 # Scale frame to fit display while maintaining aspect ratio
                 if frame_aspect > window_aspect:
                     # Frame is wider - scale to fit height
                     target_height = window_height
                     target_width = int(window_height * frame_aspect)
+                    print(f"Scaling to fit height: {target_width}x{target_height}")
                 else:
                     # Frame is taller - scale to fit width
                     target_width = window_width
                     target_height = int(window_width / frame_aspect)
+                    print(f"Scaling to fit width: {target_width}x{target_height}")
 
                 # Resize frame
                 frame = cv2.resize(frame, (target_width, target_height))
