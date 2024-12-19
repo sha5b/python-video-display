@@ -23,9 +23,6 @@ class VideoPlayer:
         # Initialize UI manager
         self.ui_manager = UIManager()
 
-        # Automatically detect system resolution
-        self.system_width, self.system_height = self.detect_system_resolution()
-
         # Get last used settings without showing UI
         settings = self.ui_manager.load_settings()
         if not settings or not settings.get('folder_path'):
@@ -34,41 +31,9 @@ class VideoPlayer:
             if not settings:
                 print("Setup cancelled")
                 return
-
-        # Use the detected system resolution
-        self.display_width = self.system_width
-        self.display_height = self.system_height
-        print(f"Using detected resolution: {self.display_width}x{self.display_height}")
         
-        # Update settings with detected resolution
-        settings['display_width'] = self.display_width
-        settings['display_height'] = self.display_height
-        
+        # Apply settings (resolution will be detected by UIManager when creating window)
         self.apply_settings(settings)
-
-    def detect_system_resolution(self) -> tuple[int, int]:
-        """Detect the system's current screen resolution."""
-        # Create a temporary window to detect resolution
-        cv2.namedWindow('temp_window', cv2.WINDOW_NORMAL)
-        cv2.moveWindow('temp_window', 0, 0)
-        cv2.setWindowProperty('temp_window', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-        cv2.waitKey(100)  # Wait for window to be created
-        
-        screen_rect = cv2.getWindowImageRect('temp_window')
-        cv2.destroyWindow('temp_window')
-        
-        if screen_rect is None:
-            print("Warning: Could not detect screen resolution")
-            return (1920, 1080)  # Default fallback
-            
-        width, height = screen_rect[2], screen_rect[3]
-        print(f"Detected system resolution: {width}x{height}")
-        
-        if platform.machine().startswith('arm'):  # Raspberry Pi
-            # For Raspberry Pi, ensure portrait orientation
-            return (min(width, height), max(width, height))
-        else:
-            return (width, height)
 
     def apply_settings(self, settings):
         """Apply the given settings to the video player."""

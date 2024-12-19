@@ -172,46 +172,62 @@ class UIManager:
         self.root.withdraw()  # Hide window instead of quitting
         self.root.quit()
     
+    def detect_system_resolution(self) -> Tuple[int, int]:
+        """Detect the actual system resolution."""
+        # Create a temporary window to detect resolution
+        temp_window = "temp_resolution_detect"
+        cv2.namedWindow(temp_window, cv2.WINDOW_NORMAL)
+        cv2.moveWindow(temp_window, 0, 0)
+        
+        # Wait for window creation
+        cv2.waitKey(1000)
+        
+        # Set fullscreen to get actual resolution
+        cv2.setWindowProperty(temp_window, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.waitKey(1000)  # Wait for fullscreen
+        
+        # Get resolution
+        screen_rect = cv2.getWindowImageRect(temp_window)
+        cv2.destroyWindow(temp_window)
+        cv2.waitKey(500)  # Wait for cleanup
+        
+        if screen_rect is not None:
+            width, height = screen_rect[2], screen_rect[3]
+            print(f"Detected system resolution: {width}x{height}")
+            return width, height
+        return 1920, 1080  # Fallback resolution
+
     def create_window(self) -> None:
         """Create and configure the OpenCV window."""
         if platform.machine().startswith('arm'):  # Raspberry Pi
-            # Create window with normal mode first
+            # First detect actual system resolution
+            actual_width, actual_height = self.detect_system_resolution()
+            
+            # Update settings with actual resolution while maintaining portrait orientation
+            if actual_width > actual_height:
+                # Landscape screen - rotate for portrait
+                self.settings['display_width'].set(str(min(actual_width, actual_height)))
+                self.settings['display_height'].set(str(max(actual_width, actual_height)))
+            else:
+                # Already portrait
+                self.settings['display_width'].set(str(actual_width))
+                self.settings['display_height'].set(str(actual_height))
+            
+            # Create window with correct settings from the start
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
             cv2.moveWindow(self.window_name, 0, 0)
             
-            # Wait for window to be fully created and visible
-            cv2.waitKey(500)  # Increased wait time for window creation
-            
-            # Now set fullscreen property
-            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-            cv2.waitKey(100)  # Wait for fullscreen to take effect
-            
-            # Get actual system resolution
-            screen_rect = cv2.getWindowImageRect(self.window_name)
-            if screen_rect is not None:
-                actual_width = screen_rect[2]
-                actual_height = screen_rect[3]
-                print(f"Detected system resolution: {actual_width}x{actual_height}")
-                
-                # Update settings with actual resolution while maintaining portrait orientation
-                if actual_width > actual_height:
-                    # Landscape screen - rotate for portrait
-                    self.settings['display_width'].set(str(min(actual_width, actual_height)))
-                    self.settings['display_height'].set(str(max(actual_width, actual_height)))
-                else:
-                    # Already portrait
-                    self.settings['display_width'].set(str(actual_width))
-                    self.settings['display_height'].set(str(actual_height))
-            
-            # Recreate window with correct settings
-            cv2.destroyWindow(self.window_name)
-            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-            cv2.moveWindow(self.window_name, 0, 0)
-            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-            self.fullscreen = True
-            
+            # Set the window size before going fullscreen
             width = int(self.settings['display_width'].get())
             height = int(self.settings['display_height'].get())
+            cv2.resizeWindow(self.window_name, width, height)
+            cv2.waitKey(1000)  # Wait for resize
+            
+            # Now set fullscreen
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            cv2.waitKey(500)  # Wait for fullscreen
+            
+            self.fullscreen = True
             print(f"Created window with resolution: {width}x{height}")
         else:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
