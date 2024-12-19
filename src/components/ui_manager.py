@@ -179,11 +179,15 @@ class UIManager:
             self.settings['display_width'].set('480')
             self.settings['display_height'].set('1920')
             
-            # Create borderless window that will use system resolution
-            cv2.namedWindow(self.window_name, cv2.WINDOW_GUI_NORMAL)
+            # Create window with specific properties for Raspberry Pi
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            # Set the window size before going fullscreen
+            cv2.resizeWindow(self.window_name, 480, 1920)
             # Move to top-left corner
             cv2.moveWindow(self.window_name, 0, 0)
-            # Immediately go fullscreen to use system resolution
+            # Brief delay to allow window to settle
+            cv2.waitKey(100)
+            # Now go fullscreen
             cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
             self.fullscreen = True
             print(f"Created window with forced resolution: 480x1920")
