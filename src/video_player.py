@@ -23,8 +23,8 @@ class VideoPlayer:
         # Initialize UI manager
         self.ui_manager = UIManager()
 
-        # Get last used settings without showing UI
-        settings = self.ui_manager.load_settings()
+        # Get last used settings with resolution detection
+        settings = self.ui_manager.load_settings(detect_resolution=True)
         if not settings or not settings.get('folder_path'):
             # If no settings exist or no folder path set, show UI to get initial settings
             settings = self.ui_manager.get_settings_with_ui()

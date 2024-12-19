@@ -47,22 +47,30 @@ class UIManager:
         self.started = False
         self.fullscreen = False  # Track fullscreen state
     
-    def load_settings(self) -> Dict:
+    def load_settings(self, detect_resolution: bool = True) -> Dict:
         """Load settings from JSON file."""
         try:
+            settings = {}
             if os.path.exists(self.settings_file):
                 with open(self.settings_file, 'r') as f:
                     settings = json.load(f)
-                    # Convert values to appropriate types
-                    return {
-                        'display_width': int(settings.get('display_width', 1920)),
-                        'display_height': int(settings.get('display_height', 1080)),
-                        'min_objects': int(settings.get('min_objects', 2)),
-                        'max_objects': int(settings.get('max_objects', 10)),
-                        'min_scale': float(settings.get('min_scale', 0.3)),
-                        'max_scale': float(settings.get('max_scale', 1.0)),
-                        'folder_path': str(settings.get('folder_path', ''))
-                    }
+            
+            # If on Raspberry Pi and detect_resolution is True, detect resolution first
+            if platform.machine().startswith('arm') and detect_resolution:
+                width, height = self.detect_system_resolution()
+                settings['display_width'] = width
+                settings['display_height'] = height
+            
+            # Convert and return values with proper types
+            return {
+                'display_width': int(settings.get('display_width', 1920)),
+                'display_height': int(settings.get('display_height', 1080)),
+                'min_objects': int(settings.get('min_objects', 2)),
+                'max_objects': int(settings.get('max_objects', 10)),
+                'min_scale': float(settings.get('min_scale', 0.3)),
+                'max_scale': float(settings.get('max_scale', 1.0)),
+                'folder_path': str(settings.get('folder_path', ''))
+            }
         except Exception as e:
             print(f"Error loading settings: {e}")
         return {
@@ -200,19 +208,6 @@ class UIManager:
     def create_window(self) -> None:
         """Create and configure the OpenCV window."""
         if platform.machine().startswith('arm'):  # Raspberry Pi
-            # First detect actual system resolution
-            actual_width, actual_height = self.detect_system_resolution()
-            
-            # Update settings with actual resolution while maintaining portrait orientation
-            if actual_width > actual_height:
-                # Landscape screen - rotate for portrait
-                self.settings['display_width'].set(str(min(actual_width, actual_height)))
-                self.settings['display_height'].set(str(max(actual_width, actual_height)))
-            else:
-                # Already portrait
-                self.settings['display_width'].set(str(actual_width))
-                self.settings['display_height'].set(str(actual_height))
-            
             # Create window with correct settings from the start
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
             cv2.moveWindow(self.window_name, 0, 0)
@@ -220,6 +215,8 @@ class UIManager:
             # Set the window size before going fullscreen
             width = int(self.settings['display_width'].get())
             height = int(self.settings['display_height'].get())
+            print(f"Setting window size to: {width}x{height}")
+            
             cv2.resizeWindow(self.window_name, width, height)
             cv2.waitKey(1000)  # Wait for resize
             
@@ -228,7 +225,6 @@ class UIManager:
             cv2.waitKey(500)  # Wait for fullscreen
             
             self.fullscreen = True
-            print(f"Created window with resolution: {width}x{height}")
         else:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
             # Let the window use system resolution in fullscreen
