@@ -175,12 +175,16 @@ class UIManager:
     def create_window(self) -> None:
         """Create and configure the OpenCV window."""
         if platform.machine().startswith('arm'):  # Raspberry Pi
-            # Create fullscreen window first to detect system resolution
+            # Create window with normal mode first
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            cv2.moveWindow(self.window_name, 0, 0)
             
-            # Wait a moment for the window to be created
-            cv2.waitKey(100)
+            # Wait for window to be fully created and visible
+            cv2.waitKey(500)  # Increased wait time for window creation
+            
+            # Now set fullscreen property
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            cv2.waitKey(100)  # Wait for fullscreen to take effect
             
             # Get actual system resolution
             screen_rect = cv2.getWindowImageRect(self.window_name)
@@ -234,16 +238,31 @@ class UIManager:
     
     def toggle_fullscreen(self):
         """Toggle fullscreen state for the video window."""
-        if platform.machine().startswith('arm'):  # On Raspberry Pi, always stay fullscreen
+        if platform.machine().startswith('arm'):  # On Raspberry Pi
+            # Toggle between fullscreen and normal
+            self.fullscreen = not self.fullscreen
+            
+            # First set to normal to reset window state
+            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+            cv2.waitKey(100)  # Wait for window state to update
+            
+            # Then set to desired state
+            cv2.setWindowProperty(
+                self.window_name,
+                cv2.WND_PROP_FULLSCREEN,
+                cv2.WINDOW_FULLSCREEN if self.fullscreen else cv2.WINDOW_NORMAL
+            )
+            
             # Force portrait mode
             width = int(self.settings['display_width'].get())
             height = int(self.settings['display_height'].get())
             if width > height:  # Ensure portrait orientation
                 self.settings['display_width'].set(str(height))
                 self.settings['display_height'].set(str(width))
-            # Always maintain fullscreen
-            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-            self.fullscreen = True
+            
+            # If not fullscreen, set window size
+            if not self.fullscreen:
+                cv2.resizeWindow(self.window_name, width, height)
             return
             
         # Non-Raspberry Pi behavior
