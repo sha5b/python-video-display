@@ -2,22 +2,19 @@
 
 A Python-based video player application designed to run on Raspberry Pi with autostart capabilities.
 
-## Requirements
+## System Requirements
 
 - Raspberry Pi (tested on Raspberry Pi 4)
-- Python 3.x
-- X Server running on Raspberry Pi
+- Python 3.x with pip and venv
+- X Server running on Raspberry Pi (for display output)
 - Git (for cloning the repository)
-- GStreamer (for video processing)
+- GStreamer and its plugins (for hardware-accelerated video processing)
 
-### Python Dependencies
-- numpy (v1.24.3)
-- opencv-python-headless (v4.8.1.78)
-- gstreamer-python (v0.3.0)
+All Python package dependencies will be automatically installed from requirements.txt during setup.
 
 ## Installation
 
-1. Install system dependencies:
+1. Install system dependencies (required for GStreamer support):
 ```bash
 sudo apt-get update
 sudo apt-get install -y gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly python3-gst-1.0
@@ -35,10 +32,12 @@ python3 -m venv venv
 source venv/bin/activate  # On Linux/Raspberry Pi
 ```
 
-4. Install required dependencies:
+4. Install Python dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt  # This will install all required Python packages
 ```
+
+Note: All Python dependencies (including numpy, opencv-python-headless, and gstreamer-python) will be automatically installed from requirements.txt
 
 ## How It Works
 
