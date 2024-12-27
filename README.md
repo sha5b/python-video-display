@@ -203,6 +203,20 @@ python-video-display/
 └── README.md                   # This file
 ```
 
+## License
+
+This project is available under a dual license:
+
+1. **Commercial License**
+   - Required for any commercial use
+   - Contact Shahab Nedaei (ned.tabulov@gmail.com) to obtain a commercial license
+   - Commercial use includes using the software in commercial products, business environments, or any way that generates revenue
+
+2. **MIT License with Attribution** (for non-commercial use)
+   - Free for non-commercial use
+   - Attribution required (include original author's name and repository link)
+   - See [LICENSE.md](LICENSE.md) for full terms
+
 ## Notes
 
 - Ensure your Raspberry Pi is configured to boot to desktop environment
